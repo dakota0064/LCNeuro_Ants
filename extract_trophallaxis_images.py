@@ -11,7 +11,7 @@ import numpy as np
     in the csv.
     :returns an edited video"""
 
-def draw_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number):
+def crop_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number, save_directory):
     # Hyperparameters
     search_radius = 30
 
@@ -44,6 +44,7 @@ def draw_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number):
 
     while count < max_index:
 
+        id = 0
         ant_heads = {}
         # Get the current frame to mark up with boxes
         good_read, frame = video.read()
@@ -90,7 +91,7 @@ def draw_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number):
 
             # Draw the box and head circle over the corresponding ant
             #cv2.drawContours(frame, [box], 0, (0, 255, 255), 2)
-            cv2.circle(frame, (head_x, head_y), search_radius, (0, 0, 255), 2)
+            #cv2.circle(frame, (head_x, head_y), search_radius, (0, 0, 255), 2)
             #cv2.drawContours(frame, [head_box], 0, (255, 0, 0), 2)
 
             # Save the head circle points for comparison to see if ants are kissing
@@ -105,9 +106,14 @@ def draw_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number):
                 else:
                     distance = np.linalg.norm(point-other_point)
                     if distance < (search_radius * 2) - 1:
-                        cv2.circle(frame, (point[0], point[1]), search_radius, (0, 255, 0), 2)
+                        pass
+                        #cv2.circle(frame, (point[0], point[1]), search_radius, (0, 255, 0), 2)
 
         # Check if there were any trophallaxis events at this frame
+
+        # Radius parameter to control image size.
+        radius = 50
+        side_length = radius*2
         events = trophallaxis_df.loc[trophallaxis_df["final_time"] >= frame_idx]
         events = events.loc[events["initial_time"] <= frame_idx]
         for index, row in events.iterrows():
@@ -127,31 +133,20 @@ def draw_ant_boxes(video_file, csv_file, trophallaxis_df, queen_number):
                 else:
                     continue
 
-            contour_list.append(seed_ant_center)
-            for point in head_points:
-                if seed_ant_center[0] == point[0] and seed_ant_center[1] == point[1]:
-                    continue
-                else:
-                    distance = np.linalg.norm(seed_ant_center-point)
-                    if distance < (search_radius * 2) - 1:
-                        contour_list.append(point + np.array([25, 25]))
-                        contour_list.append(point + np.array([-25, 25]))
-                        contour_list.append(point + np.array([25, -25]))
-                        contour_list.append(point + np.array([-25, -25]))
+            # Take the bounding box around the identified ants' head
+            bounding_rect = [seed_ant_center[0]-radius, seed_ant_center[1]-radius, side_length, side_length]
 
-            contour_list = np.array(contour_list, dtype=np.int32)
+            #cv2.rectangle(frame, (int(bounding_rect[0]), int(bounding_rect[1])),
+            #              (int(bounding_rect[0])+int(bounding_rect[2]),  int(bounding_rect[1]) + int(bounding_rect[3])),
+            #              (0, 255, 255), 5)
 
-            # Sometimes the forager ant listed isn't actually tracked by the qr scanner
-            # In that case we assume a bounding box around the foragers head
-            if len(contour_list) == 1:
-                point = contour_list[0]
-                bounding_rect = [point[0]-25, point[1]-25, 50, 50]
-            else:
-                bounding_rect = cv2.boundingRect(contour_list)
-
-            cv2.rectangle(frame, (int(bounding_rect[0]), int(bounding_rect[1])),
-                          (int(bounding_rect[0])+int(bounding_rect[2]),  int(bounding_rect[1]) + int(bounding_rect[3])),
-                          (0, 255, 255), 5)
+            try:
+                crop = frame[bounding_rect[1]:bounding_rect[1]+bounding_rect[3], bounding_rect[0]:bounding_rect[0]+bounding_rect[2]]
+                crop = cv2.resize(crop, (side_length, side_length))
+                cv2.imwrite(save_directory + str(frame_idx) + "-" + str(id) + ".jpg", crop)
+                id += 1
+            except:
+                print("Error extracting from frame ", frame_idx)
 
             # plt.imshow(frame)
             # plt.savefig("colony_A_bb.jpg")
@@ -173,7 +168,9 @@ if __name__ == '__main__':
     start_time = timeit.default_timer()
 
     colony_A_events = pd.read_csv("data/interactions_data_A.csv")
-    draw_ant_boxes("data/colony_A.avi", "data/raw_fluorescence_colony_A.csv", colony_A_events, 42)
+    colony_A_nonevents = pd.read_csv("data/predicted_interactions.csv")
+    crop_ant_boxes("data/colony_A.avi", "data/raw_fluorescence_colony_A.csv", colony_A_events, 42, "images/truths/A-")
+    crop_ant_boxes("data/colony_A.avi", "data/raw_fluorescence_colony_A.csv", colony_A_nonevents, 42, "images/falses/A-")
 
     # colony_B_events = trophallaxis_df[trophallaxis_df["Experiment"] == "B"]
     # draw_ant_boxes("data/colony_B.avi", "data/raw_fluorescence_colony_B.csv", colony_B_events)
